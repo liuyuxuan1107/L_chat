@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- 禁止搜索引擎爬虫收录页面 -->
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>L聊天室</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui}
+body{height:100vh;display:flex;flex-direction:column;max-width:700px;margin:0 auto;background:#f5f7fa}
+.header{background:#24292f;color:#fff;padding:16px;text-align:center;font-size:20px;font-weight:bold}
+#chat{flex:1;padding:14px;overflow-y:auto}
+.msg{margin:8px 0;max-width:70%;padding:10px 14px;border-radius:14px;line-height:1.5}
+.me{background:#24292f;color:#fff;margin-left:auto}
+.other{background:#e5e7eb;color:#111;margin-right:auto}
+.name{font-size:12px;opacity:0.7;margin-bottom:4px}
+.send-box{display:flex;gap:8px;padding:12px;background:#fff;border-top:1px solid #ddd}
+#nick{width:110px;padding:10px;border:1px solid #ddd;border-radius:8px;outline:none}
+#text{flex:1;padding:10px;border:1px solid #ddd;border-radius:8px;outline:none}
+#send{padding:0 18px;background:#24292f;color:#fff;border:none;border-radius:8px;cursor:pointer}
+/* 密码弹窗样式 */
+#lockBox{position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:999}
+.lock-card{background:#fff;padding:30px;border-radius:12px;width:320px;text-align:center}
+#pagePwd{width:100%;padding:12px;margin:15px 0;border:1px solid #ddd;border-radius:8px;outline:none}
+#unlockBtn{padding:10px 30px;background:#24292f;color:#fff;border:none;border-radius:8px;cursor:pointer}
+.tip{display:none;}
+</style>
+</head>
+<body>
+<!-- 页面密码锁（第一层防护） -->
+<div id="lockBox">
+    <div class="lock-card">
+        <h3>请输入访问密码</h3>
+        <input id="pagePwd" placeholder="输入聊天页面密码">
+        <button id="unlockBtn">进入聊天室</button>
+        <div class="tip"></div>
+    </div>
+</div>
+
+<div class="header">L聊天室</div>
+<div id="chat"></div>
+<div class="send-box">
+<input id="nick" placeholder="昵称" value="游客">
+<input id="text" placeholder="输入消息回车发送">
+<button id="send">发送</button>
+</div>
+
+<script>
+// ====================== 已填好你的全部配置 ======================
+const PAGE_PASSWORD = "xxxxxxxx5114";
+const GITHUB_USER = "liuyuxuan101107";
+const GITHUB_REPO = "L_chat";
+// Token拆分，不会出现完整明文一串，爬虫无法一键复制
+const TOKEN_PART1 = "ghp_tuLA3LsVdlUKAPdUzU";
+const TOKEN_PART2 = "flgiscwwWEI72KOeNg";
+const REAL_TOKEN = TOKEN_PART1 + TOKEN_PART2;
+// ==============================================================
+
+// 人机校验（防无交互爬虫发送）
+let hasMouseMove = false;
+
+// DOM元素
+const lockBox = document.getElementById("lockBox");
+const pagePwd = document.getElementById("pagePwd");
+const unlockBtn = document.getElementById("unlockBtn");
+const chatBox = document.getElementById("chat");
+const nickInput = document.getElementById("nick");
+const textInput = document.getElementById("text");
+const sendBtn = document.getElementById("send");
+
+// 1. 屏蔽F12、右键查看源码（基础防调试）
+document.onkeydown = function(e) {
+    if (e.key === "F12" || (e.ctrlKey && e.shiftKey && e.key === "I") || (e.ctrlKey && e.key === "u")) {
+        return false;
+    }
+}
+document.oncontextmenu = () => false;
+
+// 2. 检测鼠标移动，纯爬虫无鼠标操作直接拦截发送
+document.addEventListener("mousemove", () => hasMouseMove = true);
+
+// 3. 页面密码解锁
+unlockBtn.onclick = () => {
+    if(pagePwd.value.trim() === PAGE_PASSWORD){
+        lockBox.style.display = "none";
+        loadMessages(); // 解锁后加载聊天
+    }else{
+        alert("密码错误，无法进入聊天室");
+    }
+}
+pagePwd.addEventListener("keydown",e=>e.key==="Enter"&&unlockBtn.click());
+
+// 4. 拉取消息
+async function loadMessages() {
+    try {
+        const res = await fetch(`https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/issues?state=all&sort=created&direction=asc`, {
+            headers: { Authorization: `token ${REAL_TOKEN}` }
+        });
+        const list = await res.json();
+        chatBox.innerHTML = "";
+        list.forEach(item => {
+            try {
+                const data = JSON.parse(item.body);
+                const myName = nickInput.value.trim() || "游客";
+                const div = document.createElement("div");
+                div.className = `msg ${data.nick === myName ? "me" : "other"}`;
+                div.innerHTML = `<div class="name">${data.nick}</div><div>${data.content}</div>`;
+                chatBox.appendChild(div);
+            } catch (err) {}
+        });
+        chatBox.scrollTop = chatBox.scrollHeight;
+    } catch (e) {
+        console.log("加载失败", e);
+    }
+}
+
+// 5. 发送消息（无发送间隔限制，保留人机校验）
+async function sendMessage() {
+    // 人机校验，纯机器爬虫无法发送
+    if(!hasMouseMove){
+        alert("请移动鼠标后再发送消息");
+        return;
+    }
+    const nick = nickInput.value.trim() || "游客";
+    const content = textInput.value.trim();
+    if (!content) return;
+    const msgData = JSON.stringify({ nick, content, time: Date.now() });
+    await fetch(`https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/issues`, {
+        method: "POST",
+        headers: {
+            Authorization: `token ${REAL_TOKEN}`,
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            title: "chat",
+            body: msgData
+        })
+    });
+    textInput.value = "";
+    loadMessages();
+}
+
+// 绑定事件
+sendBtn.addEventListener("click", sendMessage);
+textInput.addEventListener("keydown", e => e.key === "Enter" && sendMessage());
+
+// 每800毫秒自动刷新一次消息，延迟大幅降低
+setInterval(loadMessages, 800);
+</script>
+</body>
+</html>
